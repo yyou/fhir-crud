@@ -1,0 +1,244 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+
+    <!--jquery-->
+    <script src="https://code.jquery.com/jquery-2.2.4.js" integrity="sha256-iT6Q9iMJYuQiMWNd9lDyBUStIq/8PuOW33aOqmvFpqI=" crossorigin="anonymous"></script>
+
+    <!--bootstrap-->
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js" integrity="sha384-0mSbJDEHialfmuBBQP6A4Qrprq5OVfW37PRR3j5ELqxss1yVqOtnepnHVP9aJ7xS" crossorigin="anonymous"></script>
+
+    <!--vue-->
+    <script src="https://unpkg.com/vue"></script>
+    <script src="https://cdn.jsdelivr.net/vue.resource/1.2.1/vue-resource.min.js"></script>
+
+</head>
+<body class="container">
+    <main id="fhir">
+        <h1>FHIR Resource / {{resourceType}}</h1>
+        <div class="row" style="border: 1px solid grey">
+            <!--List of FHIR resource types-->
+            <div class="col-md-2">
+                <ul class="list-unstyled">
+                    <li><a href="#" @click.prevent="changeResourceType('Patient')">Patient</a></li>
+                    <li><a href="#" @click.prevent="changeResourceType('Location')">Location</a></li>
+                    <li><a href="#" @click.prevent="changeResourceType('HealthcareService')">HealthcareService</a></li>
+                    <li><a href="#" @click.prevent="changeResourceType('Practitioner')">Practitioner</a></li>
+                </ul>
+            </div>
+
+            <!--List of resource-->
+            <div class="col-md-6">
+                <button class="btn btn-default pull-right" @click.prevent="createResource">Create new</button>
+                <p v-if="resources.length == 0">There is no resource currently.</p>
+                <table v-else class="table table-striped">
+                    <tr><th>ID</th><th>Type</th><th>Name</th><th>Edit</th><th>Delete</th></tr>
+                    <tr is="fhirResource" v-for="resource in resources" v-bind:model="resource"
+                        v-on:deleteResource="deleteResource" v-on:editResource="editResource"
+                        v-on:viewResource="getResource"></tr>
+                </table>                
+            </div>
+
+            <!--JSON structure of a resource-->
+            <div class="col-md-4">
+                <pre v-show="mode === 'view'">{{JSON.stringify(currentResource, null, 2)}}</pre>
+                <div v-show="mode === 'edit'">
+                    <textarea v-model="JSON.stringify(currentResource, null, 2)"
+                              style="width: 100%; height: 400px;"></textarea>
+                    <button class="btn btn-default" v-on:click="saveResource">Save</button>
+                    <button class="btn btn-default" v-on:click="cancelEdit">Cancel</button>
+                </div>
+                <div v-show="mode === 'create'">
+                    <textarea v-model="JSON.stringify(currentResource, null, 2)"
+                              style="width: 100%; height: 400px;"></textarea>
+                    <button class="btn btn-default" v-on:click="saveResource">Save</button>
+                    <button class="btn btn-default" v-on:click="cancelCreate">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        Vue.http.interceptors.push(function (request, next) {
+            // modify headers
+            request.headers.set('Access-Control-Allow-Origin');
+
+            // continue to next interceptor
+            next();
+        });
+
+        Vue.component('fhirResource', {
+            template: `
+                <tr>
+                    <td><a href="#" @click.prevent="viewResource(id)">{{id}}</a></td>                    
+                    <td>{{resourceType}}</td>
+                    <td>{{name}}</td>
+                    <td><a href="#" @click.prevent="editResource(id)">Edit</a></td>
+                    <td><a href="#" @click.prevent="deleteResource(id)">Delete</a></td>
+                </tr>
+            `,
+            props: ['model'],            
+            //data: function () {
+            //    return {
+            //        id: this.model.id,                    
+            //        resourceType: this.model.resourceType
+            //    };
+            //},
+            methods: {
+                deleteResource: function (resourceId) {
+                    this.$emit('deleteresource', resourceId);
+                },
+                editResource: function (resourceId) {
+                    this.$emit('editresource', resourceId);
+                },
+                viewResource: function (resourceId) {
+                    this.$emit('viewresource', resourceId);
+                }
+            },
+            computed: {
+                id: function() {
+                    return this.model.id;
+                },
+                resourceType: function() {
+                    return this.model.resourceType;
+                },
+                name: function () {
+                    var resource = this.model;
+
+                    if (!resource.name) {
+                        return '[Name not provided]';
+                    }
+
+                    if (typeof resource.name == 'string') {
+                        return resource.name;
+                    }
+
+                    if (typeof resource.name === 'object' && resource.name.length) {
+                        var name1 = resource.name[0];
+                        if (typeof name1 === 'string') {
+                            return name1;
+                        }
+
+                        if (name1.family && name1.family.length && 
+                            name1.given && name1.given.length) {
+                            return name1.given[0] + ' ' + name1.family[0];
+                        }
+                    }
+
+                    return '[Name not provided]';
+                }
+            }
+        });
+
+        var fhir = new Vue({
+            el: '#fhir',
+            data: {
+                baseUrl: 'http://localhost/spark/fhir/', 
+                resourceType: 'Patient',
+                resources: [],                
+                currentResource: {},
+                mode: 'view'
+            },
+            computed: {
+                resourceUrl: function() {
+                    return this.baseUrl + this.resourceType + '/';
+                }
+            },
+            methods: {
+                changeResourceType: function(resourceType) {
+                    this.resourceType = resourceType;
+                    this.currentResource = {};
+                    this.getAllResources();                    
+                    this.mode = 'view';
+                },
+                getResource: function(resourceId) {
+                    var vm = this;
+                    this.$http.get(this.resourceUrl + resourceId).then(response => {
+                        vm.mode = 'view';
+                        vm.currentResource = response.data;
+                    });
+                },
+                getAllResources: function () {
+                    var vm = this;
+                    this.$http.get(this.resourceUrl).then(response => {
+                        vm.resources.splice(0);
+                        if (response.data.total === 0) {
+                            return;
+                        }
+                        var entries = response.data.entry;
+                        for (var n = 0; n < entries.length; ++n) {
+                            //vm.resources.push(entries[n].resource);
+                            Vue.set(vm.resources, n, entries[n].resource);
+                        }
+                        vm.mode = 'view';
+                    });
+                },
+                deleteResource: function(resourceId) {
+                    if (!resourceId) {
+                        return;
+                    }
+                    var vm = this;
+                    this.$http.delete(this.resourceUrl + resourceId).then(response => {
+                        var index = -1;
+                        for (var n = 0; n < vm.resources.length; ++n) {
+                            if (vm.resources[n].id == resourceId) {
+                                index = n;
+                                break;
+                            }
+                        }
+                        if (index != -1) {
+                            vm.resources.splice(index, 1);
+                        }
+                    });
+                },
+                editResource: function(resourceId) {
+                    var vm = this;
+                    this.$http.get(this.resourceUrl + resourceId).then(response => {
+                        vm.mode = 'edit';
+                        vm.currentResource = response.data;
+                    });
+                },
+                createResource: function () {
+                    this.currentResource = {
+                        'resourceType': this.resourceType,
+                    };
+                    this.mode = 'create';                    
+                },
+                cancelCreate: function() {
+                    this.mode = 'view';
+                    this.currentResource = {};
+                },
+                saveResource: function () {
+                    var id = this.currentResource.id;
+                    var vm = this;
+
+                    if (id) {
+                        //for editing existing one.                        
+                        this.$http.put(this.resourceUrl + id, this.currentResource).then(response => {
+                            vm.mode = 'view';
+                            vm.currentResource = response.data;
+                        });
+                    } else {
+                        //for creating new one
+                        this.$http.post(this.resourceUrl, this.currentResource).then(response => {
+                            vm.mode = 'view';
+                            vm.currentResource = response.data;
+                            vm.resources.push(response.data);
+                        });
+                    }
+                },
+                cancelEdit: function () {
+                    this.mode = 'view';
+                }                
+            }
+        });
+
+        fhir.getAllResources();
+
+    </script>
+</body>
+</html>
