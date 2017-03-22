@@ -39,7 +39,7 @@
                     <tr><th>ID</th><th>Type</th><th>Name</th><th>Edit</th><th>Delete</th></tr>
                     <tr is="fhirResource" v-for="resource in resources" v-bind:model="resource"
                         v-on:deleteResource="deleteResource" v-on:editResource="editResource"
-                        v-on:viewResource="getResource"></tr>
+                        v-on:viewResource="getResource" :key="resource.resourceType + resource.id"></tr>
                 </table>                
             </div>
 
@@ -82,12 +82,12 @@
                 </tr>
             `,
             props: ['model'],            
-            //data: function () {
-            //    return {
-            //        id: this.model.id,                    
-            //        resourceType: this.model.resourceType
-            //    };
-            //},
+            data: function () {
+                return {
+                    id: this.model.id,                    
+                    resourceType: this.model.resourceType
+                };
+            },
             methods: {
                 deleteResource: function (resourceId) {
                     this.$emit('deleteresource', resourceId);
@@ -99,13 +99,7 @@
                     this.$emit('viewresource', resourceId);
                 }
             },
-            computed: {
-                id: function() {
-                    return this.model.id;
-                },
-                resourceType: function() {
-                    return this.model.resourceType;
-                },
+            computed: {                
                 name: function () {
                     var resource = this.model;
 
@@ -175,6 +169,7 @@
                             Vue.set(vm.resources, n, entries[n].resource);
                         }
                         vm.mode = 'view';
+                        vm.$nextTick(function () { });
                     });
                 },
                 deleteResource: function(resourceId) {
