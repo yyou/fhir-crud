@@ -45,7 +45,7 @@
 
             <!--JSON structure of a resource-->
             <div class="col-md-4">               
-                <fhir-resource-view v-bind:resource="currentResource" v-on:save="save" />
+                <fhir-resource-view v-bind:view-model="currentResourceModel" v-on:save="save" />
             </div>
         </div>
     </main>
@@ -55,41 +55,31 @@
             template: `
                     <div>
                         <div v-show="mode === 'view'">
-                            <pre style="width: 100%; height: 400px;">{{resourceJson}}</pre>
+                            <pre style="width: 100%; height: 400px;">{{viewModel.resourceJson}}</pre>
                             <button class="btn btn-default" @click="edit">Edit</button>
                         </div>
                         <div v-show="mode === 'edit'">
-                            <textarea v-model="resourceJson" style="width: 100%; height: 400px;"></textarea>
+                            <textarea v-model="viewModel.resourceJson" style="width: 100%; height: 400px;"></textarea>
                             <button class ="btn btn-default" v-on:click="save">Save</button>
                             <button class ="btn btn-default" v-on:click="cancel">Cancel</button>
                         </div>
                         <div v-show="mode === 'create'">
-                            <textarea v-model="resourceJson" style="width: 100%; height: 400px;"></textarea>
+                            <textarea v-model="viewModel.resourceJson" style="width: 100%; height: 400px;"></textarea>
                             <button class ="btn btn-default" v-on:click="save">Save</button>
                             <button class ="btn btn-default" v-on:click="cancel">Cancel</button>
                         </div>
                     </div>
                 `,
-            props: ['resource'],
-            computed: {
-                resourceJson: {
-                    get: function () {
-                        return JSON.stringify(this.resource, null, 2);
-                    },
-                    set: function (value) {
-                        this.changedResource = JSON.parse(value);
-                    }
-                }
-            },
+            props: ['viewModel'],            
             data: function () {
                 return {
-                    mode: 'view',
-                    changedResource: this.resource
+                    mode: 'view'                    
                 };
-            },
+            },            
             methods: {                
                 edit: function () {
-                    if (this.resource.id) {
+                    var resource = JSON.parse(this.viewModel.resourceJson);
+                    if (resource.id) {
                         this.mode = 'edit';
                     } else {
                         this.mode = 'create';
@@ -99,7 +89,12 @@
                     this.mode = 'view';
                 },
                 save: function () {
-                    this.$emit('save', this.changedResource);
+                    var resource = JSON.parse(this.viewModel.resourceJson);
+                    if (resource.id && this.mode === 'create') {
+                        alert('you should not give it an id when creating a new resource.');
+                        return;
+                    }
+                    this.$emit('save', resource);
                     this.mode = 'view';
                 }
             }
@@ -182,6 +177,11 @@
             computed: {
                 resourceUrl: function() {
                     return this.baseUrl + this.resourceType + '/';
+                },
+                currentResourceModel: function () {
+                    return {
+                        resourceJson: JSON.stringify(this.currentResource, null, 2)
+                    };
                 }
             },
             methods: {
@@ -229,9 +229,8 @@
                 },                
                 createResource: function () {
                     this.currentResource = {
-                        'resourceType': this.resourceType,
-                    };
-                    this.$emit('create-resource');
+                        'resourceType': this.resourceType
+                    };                    
                 },                
                 save: function (resource) {
                     var vm = this;
