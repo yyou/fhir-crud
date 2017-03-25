@@ -36,33 +36,75 @@
                 <button class="btn btn-default pull-right" @click.prevent="createResource">Create new</button>
                 <p v-if="resources.length == 0">There is no resource currently.</p>
                 <table v-else class="table table-striped">
-                    <tr><th>ID</th><th>Type</th><th>Name</th><th>Edit</th><th>Delete</th></tr>
+                    <tr><th>ID</th><th>Type</th><th>Name</th><th>Delete</th></tr>
                     <tr is="fhirResource" v-for="resource in resources" v-bind:model="resource"
-                        v-on:deleteResource="deleteResource" v-on:editResource="editResource"
-                        v-on:viewResource="getResource" :key="resource.resourceType + resource.id"></tr>
+                        v-on:deleteResource="deleteResource" v-on:viewResource="getResource" 
+                        :key="resource.resourceType + resource.id"></tr>
                 </table>                
             </div>
 
             <!--JSON structure of a resource-->
-            <div class="col-md-4">
-                <pre v-show="mode === 'view'">{{JSON.stringify(currentResource, null, 2)}}</pre>
-                <div v-show="mode === 'edit'">
-                    <textarea v-model="JSON.stringify(currentResource, null, 2)"
-                              style="width: 100%; height: 400px;"></textarea>
-                    <button class="btn btn-default" v-on:click="saveResource">Save</button>
-                    <button class="btn btn-default" v-on:click="cancelEdit">Cancel</button>
-                </div>
-                <div v-show="mode === 'create'">
-                    <textarea v-model="JSON.stringify(currentResource, null, 2)"
-                              style="width: 100%; height: 400px;"></textarea>
-                    <button class="btn btn-default" v-on:click="saveResource">Save</button>
-                    <button class="btn btn-default" v-on:click="cancelCreate">Cancel</button>
-                </div>
+            <div class="col-md-4">               
+                <fhir-resource-view v-bind:resource="currentResource" v-on:save="save" />
             </div>
         </div>
     </main>
 
     <script>
+        Vue.component('fhir-resource-view', {
+            template: `
+                    <div>
+                        <div v-show="mode === 'view'">
+                            <pre style="width: 100%; height: 400px;">{{resourceJson}}</pre>
+                            <button class="btn btn-default" @click="edit">Edit</button>
+                        </div>
+                        <div v-show="mode === 'edit'">
+                            <textarea v-model="resourceJson" style="width: 100%; height: 400px;"></textarea>
+                            <button class ="btn btn-default" v-on:click="save">Save</button>
+                            <button class ="btn btn-default" v-on:click="cancel">Cancel</button>
+                        </div>
+                        <div v-show="mode === 'create'">
+                            <textarea v-model="resourceJson" style="width: 100%; height: 400px;"></textarea>
+                            <button class ="btn btn-default" v-on:click="save">Save</button>
+                            <button class ="btn btn-default" v-on:click="cancel">Cancel</button>
+                        </div>
+                    </div>
+                `,
+            props: ['resource'],
+            computed: {
+                resourceJson: {
+                    get: function () {
+                        return JSON.stringify(this.resource, null, 2);
+                    },
+                    set: function (value) {
+                        this.changedResource = JSON.parse(value);
+                    }
+                }
+            },
+            data: function () {
+                return {
+                    mode: 'view',
+                    changedResource: this.resource
+                };
+            },
+            methods: {                
+                edit: function () {
+                    if (this.resource.id) {
+                        this.mode = 'edit';
+                    } else {
+                        this.mode = 'create';
+                    }
+                },
+                cancel: function () {
+                    this.mode = 'view';
+                },
+                save: function () {
+                    this.$emit('save', this.changedResource);
+                    this.mode = 'view';
+                }
+            }
+        });
+
         Vue.http.interceptors.push(function (request, next) {
             // modify headers
             request.headers.set('Access-Control-Allow-Origin');
@@ -76,8 +118,7 @@
                 <tr>
                     <td><a href="#" @click.prevent="viewResource(id)">{{id}}</a></td>                    
                     <td>{{resourceType}}</td>
-                    <td>{{name}}</td>
-                    <td><a href="#" @click.prevent="editResource(id)">Edit</a></td>
+                    <td>{{name}}</td>                    
                     <td><a href="#" @click.prevent="deleteResource(id)">Delete</a></td>
                 </tr>
             `,
@@ -102,27 +143,28 @@
             computed: {                
                 name: function () {
                     var resource = this.model;
-
                     if (!resource.name) {
+                        //for HealthcareService
+                        if (resource.serviceName) {
+                            return resource.serviceName;
+                        }
+
                         return '[Name not provided]';
                     }
 
-                    if (typeof resource.name == 'string') {
+                    //for Location
+                    if (typeof resource.name === 'string') {
                         return resource.name;
                     }
 
                     if (typeof resource.name === 'object' && resource.name.length) {
                         var name1 = resource.name[0];
-                        if (typeof name1 === 'string') {
-                            return name1;
-                        }
-
+                        //for Patient and Practitioner
                         if (name1.family && name1.family.length && 
                             name1.given && name1.given.length) {
                             return name1.given[0] + ' ' + name1.family[0];
                         }
                     }
-
                     return '[Name not provided]';
                 }
             }
@@ -146,30 +188,25 @@
                 changeResourceType: function(resourceType) {
                     this.resourceType = resourceType;
                     this.currentResource = {};
-                    this.getAllResources();                    
-                    this.mode = 'view';
+                    this.getAllResources();                                        
                 },
                 getResource: function(resourceId) {
                     var vm = this;
-                    this.$http.get(this.resourceUrl + resourceId).then(response => {
-                        vm.mode = 'view';
+                    this.$http.get(this.resourceUrl + resourceId).then(response => {                        
                         vm.currentResource = response.data;
                     });
                 },
                 getAllResources: function () {
                     var vm = this;
                     this.$http.get(this.resourceUrl).then(response => {
-                        vm.resources.splice(0);
+                        vm.resources = [];
                         if (response.data.total === 0) {
                             return;
                         }
                         var entries = response.data.entry;
                         for (var n = 0; n < entries.length; ++n) {
-                            //vm.resources.push(entries[n].resource);
-                            Vue.set(vm.resources, n, entries[n].resource);
-                        }
-                        vm.mode = 'view';
-                        vm.$nextTick(function () { });
+                            vm.resources.push(entries[n].resource);
+                        }                        
                     });
                 },
                 deleteResource: function(resourceId) {
@@ -189,51 +226,48 @@
                             vm.resources.splice(index, 1);
                         }
                     });
-                },
-                editResource: function(resourceId) {
-                    var vm = this;
-                    this.$http.get(this.resourceUrl + resourceId).then(response => {
-                        vm.mode = 'edit';
-                        vm.currentResource = response.data;
-                    });
-                },
+                },                
                 createResource: function () {
                     this.currentResource = {
                         'resourceType': this.resourceType,
                     };
-                    this.mode = 'create';                    
-                },
-                cancelCreate: function() {
-                    this.mode = 'view';
-                    this.currentResource = {};
-                },
-                saveResource: function () {
-                    var id = this.currentResource.id;
+                    this.$emit('create-resource');
+                },                
+                save: function (resource) {
                     var vm = this;
-
+                    var id = resource.id;
                     if (id) {
                         //for editing existing one.                        
-                        this.$http.put(this.resourceUrl + id, this.currentResource).then(response => {
-                            vm.mode = 'view';
-                            vm.currentResource = response.data;
-                        });
+                        this.$http.put(this.resourceUrl + id, resource)
+                            .then(response => {                                
+                                vm.currentResource = response.data;
+                                var idx = this.findIndex(vm.currentResource.id);
+                                if (idx != -1) {
+                                    vm.resources[idx] = vm.currentResource;
+                                }
+                            });
                     } else {
                         //for creating new one
-                        this.$http.post(this.resourceUrl, this.currentResource).then(response => {
-                            vm.mode = 'view';
+                        this.$http.post(this.resourceUrl, resource).then(response => {                            
                             vm.currentResource = response.data;
                             vm.resources.push(response.data);
                         });
                     }
                 },
-                cancelEdit: function () {
-                    this.mode = 'view';
-                }                
+                findIndex: function (id) {
+                    var index = -1;
+                    for (var n = 0; n < this.resources.length; ++n) {
+                        if (this.resources[n].id == id) {
+                            index = n;
+                            break;
+                        }
+                    }
+                    return index;
+                }
             }
         });
 
         fhir.getAllResources();
-
     </script>
 </body>
 </html>
